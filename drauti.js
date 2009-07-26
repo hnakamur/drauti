@@ -420,7 +420,7 @@ var drauti = (function() {
 
   function StringUtil() {}
   def(StringUtil, (function() {
-    function lPad(str, length, padding) {
+    function leftPad(str, length, padding) {
       var pad = padding || ' ',
         count = (length - str.length) / pad.length;
       if (count > 0) {
@@ -435,15 +435,16 @@ var drauti = (function() {
     }
 
     function zeroPad(str, length) {
-      return lPad(str, length, '0');
+      return leftPad(str, length, '0');
     }
 
     function toHex(n, length) {
-      return zeroPad(n.toString(16), length);
+      var s = n.toString(16);
+      return length ? zeroPad(s, length) : s;
     }
 
     return {
-      lPad: lPad,
+      leftPad: leftPad,
       zeroPad: zeroPad,
       toHex: toHex
     };
@@ -451,14 +452,21 @@ var drauti = (function() {
 
   function MathUtil() {}
   def(MathUtil, (function() {
-    function clip(value, min, max) {
+    function clipByRange(value, min, max) {
       return Math.max(Math.min(value, max), min);
     }
 
     return {
-      clip: clip
+      clipByRange: clipByRange
     };
   })());
+
+  function AngleUtil() {}
+  def(AngleUtil, {
+    normalizeDegree: function normalizeDegree(degree) {
+      return ((degree % 360) + 360) % 360;
+    }
+  });
 
   ///////////////////////////////////////
   // RgbColor: @immutable
@@ -466,106 +474,109 @@ var drauti = (function() {
 
   /**
    * RgbColor constructor.
-   * @param red : red component (0-255)
-   * @param green : green component (0-255)
-   * @param blue : blue component (0-255)
+   * @param {red} red component. fraction:0.0~1.0
+   * @param {green} green component. fraction:0.0~1.0
+   * @param {blue} blue component. fraction:0.0~1.0
    */
   function RgbColor(red, green, blue) {
-    this.red = MathUtil.clip(red, 0, 255);
-    this.green = MathUtil.clip(green, 0, 255);
-    this.blue = MathUtil.clip(blue, 0, 255);
+    this.red = MathUtil.clipByRange(red, 0, 1);
+    this.green = MathUtil.clipByRange(green, 0, 1);
+    this.blue = MathUtil.clipByRange(blue, 0, 1);
   }
   def(RgbColor, (function() {
-    var threeDigitRgbRegExp = /#([0-9A-Fa-f])([0-9A-Fa-f])([0-9A-Fa-f])/,
-      sixDigitRgbRegExp = /#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})/,
-      rgbIntegerRegExp = /rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/,
-      rgbPercentRegExp = /rgb\(\s*(\d+)%\s*,\s*(\d+)%\s*,\s*(\d+)%\s*\)/;
-
-    function parseHex(s) {
-      return parseInt(s, 16);
+    function _componentToInt(component) {
+      return Math.round(255 * component);
     }
 
-    function fromString(color) {
-      var m = color.match(sixDigitRgbRegExp);
-      if (m)
-        return new RgbColor(parseHex(m[1]), parseHex(m[2]), parseHex(m[3]));
-
-      m = color.match(threeDigitRgbRegExp);
-      if (m) {
-        return new RgbColor(
-          parseHex(m[1] + m[1]),
-          parseHex(m[2] + m[2]),
-          parseHex(m[3] + m[3])
-        );
-      }
-
-      m = color.match(rgbIntegerRegExp);
-      if (m)
-        return new RgbColor(parseInt(m[1]), parseInt(m[2]), parseInt(m[3]));
-
-      m = color.match(rgbPercentRegExp);
-      if (m)
-        return fromFractions(m[1] / 100, m[2] / 100, m[3] / 100);
-
-      throw new Error('Invalid color string');
-    }
-
-    function fromFractions(red, green, blue) {
-      return new RgbColor(
-        Math.round(255 * red),
-        Math.round(255 * green),
-        Math.round(255 * blue)
-      );
+    function _componentToHex(component) {
+      return StringUtil.toHex(_componentToInt(component), 2);
     }
 
     return {
-      fromString: fromString,
-      fromFractions: fromFractions
+      _componentToInt: _componentToInt,
+      _componentToHex: _componentToHex
     };
   })());
   def(RgbColor.prototype, {
-    toString: function toString() {
+    toPercentString: function toPercentString() {
+      return [
+        'rgb(',
+        [
+          ColorUtil._componentToPercent(this.red),
+          ColorUtil._componentToPercent(this.green),
+          ColorUtil._componentToPercent(this.blue)
+        ].join(', '),
+        ')'
+      ].join('');
+    },
+    toIntRangeString: function toIntRangeString() {
+      return [
+        'rgb(',
+        [
+          RgbColor._componentToInt(this.red),
+          RgbColor._componentToInt(this.green),
+          RgbColor._componentToInt(this.blue)
+        ].join(', '),
+        ')'
+      ].join('');
+    },
+    toHashString: function toHashString() {
       return [
         '#',
-        StringUtil.toHex(this.red, 2),
-        StringUtil.toHex(this.green, 2),
-        StringUtil.toHex(this.blue, 2)
+        RgbColor._componentToHex(this.red),
+        RgbColor._componentToHex(this.green),
+        RgbColor._componentToHex(this.blue)
       ].join('');
+    },
+    toString: function toString() {
+      return this.toPercentString();
     }
   });
 
   ///////////////////////////////////////
-  // HsbColor: @immutable
+  // RgbaColor: @immutable
   ///////////////////////////////////////
 
   /**
-   * HsbColor constructor.
+   * RgbaColor constructor.
+   * @param {red} red component. fraction:0.0~1.0
+   * @param {green} green component. fraction:0.0~1.0
+   * @param {blue} blue component. fraction:0.0~1.0
+   * @param {alpha} alpha component. fraction number:0.0~1.0
    */
-  function HsbColor(hue, saturation, brightness) {
-    this.hue = hue;
-    this.saturation = saturation;
-    this.brightness = brightness;
+  function RgbaColor(red, green, blue, alpha) {
+    this.red = MathUtil.clipByRange(red, 0, 1);
+    this.green = MathUtil.clipByRange(green, 0, 1);
+    this.blue = MathUtil.clipByRange(blue, 0, 1);
+    this.alpha = MathUtil.clipByRange(alpha, 0, 1);
   }
-  def(HsbColor.prototype, {
-    toRgbColor: function toRgbColor() {
-      var h = this.hue,
-        s = this.saturation,
-        b = this.brightness,
-        h60 = h / 60,
-        ih60 = Math.floor(h60),
-        hi = ih60 % 6,
-        f = h60 - ih60,
-        p = b * (1 - s),
-        q = b * (1 - f * s);
-        t = b * (1 - (1 - f) * s);
-      switch (hi) {
-        case 0: return RgbColor.fromFractions(b, t, p);
-        case 1: return RgbColor.fromFractions(q, b, p);
-        case 2: return RgbColor.fromFractions(p, b, t);
-        case 3: return RgbColor.fromFractions(p, q, b);
-        case 4: return RgbColor.fromFractions(t, p, b);
-        case 5: return RgbColor.fromFractions(b, p, q);
-      }
+  def(RgbaColor.prototype, {
+    toPercentString: function toPercentString() {
+      return [
+        'rgba(',
+        [
+          ColorUtil._componentToPercent(this.red),
+          ColorUtil._componentToPercent(this.green),
+          ColorUtil._componentToPercent(this.blue),
+          this.alpha
+        ].join(', '),
+        ')'
+      ].join('');
+    },
+    toIntRangeString: function toIntRangeString() {
+      return [
+        'rgba(',
+        [
+          RgbColor._componentToInt(this.red),
+          RgbColor._componentToInt(this.green),
+          RgbColor._componentToInt(this.blue),
+          this.alpha
+        ].join(', '),
+        ')'
+      ].join('');
+    },
+    toString: function toString() {
+      return this.toPercentString();
     }
   });
 
@@ -575,48 +586,189 @@ var drauti = (function() {
 
   /**
    * HslColor constructor.
+   * @param {hue} hue component in degrees.
+   * @param {saturation} saturation component. fraction:0.0~1.0
+   * @param {lightness} lightness component. fraction:0.0~1.0
+   * @param {alpha} alpha component. fraction:0.0~1.0
    */
   function HslColor(hue, saturation, lightness) {
-    this.hue = hue;
-    this.saturation = saturation;
-    this.lightness = lightness;
+    this.hue = AngleUtil.normalizeDegree(hue);
+    this.saturation = MathUtil.clipByRange(saturation, 0, 1);
+    this.lightness = MathUtil.clipByRange(lightness, 0, 1);
   }
   def(HslColor.prototype, (function() {
-    function adjustTc(tc) {
-      return tc < 0 ? tc + 1 : tc > 1 ? tc - 1 : tc;
-    }
-
     function toRgbColor() {
-      var h = this.hue,
-        s = this.saturation,
+      var s = this.saturation,
         l = this.lightness,
         q = l < 0.5 ? l * (1 + s) : l + s - l * s,
         p = 2 * l - q,
-        hk = h / 360,
-        tr = hk + 1 / 3,
-        tg = hk,
-        tb = hk - 1 / 3;
+        h = this.hue / 360,
+        tr = h + 1 / 3,
+        tg = h,
+        tb = h - 1 / 3;
+      return new RgbColor(
+        _convertColorComp(tr, p, q),
+        _convertColorComp(tg, p, q),
+        _convertColorComp(tb, p, q)
+      );
+    }
 
-      function calcColorComp(tc) {
-        if (tc < 1 / 6)
-          return p + (q - p) * 6 * tc;
-        else if (tc < 1 / 2)
-          return q;
-        else if (tc < 2 / 3)
-          return p + (q - p) * 6 * (2 / 3 - tc);
-        else
-          return p;
-      }
+    function _convertColorComp(c, p, q) {
+      if (c < 0)
+        c = c + 1;
+      if (c > 1)
+        c = c - 1;
+      if (c < 1 / 6)
+        return p + (q - p) * 6 * c;
+      else if (c < 1 / 2)
+        return q;
+      else if (c < 2 / 3)
+        return p + (q - p) * 6 * (2 / 3 - c);
+      else
+        return p;
+    }
 
-      var r = calcColorComp(adjustTc(tr)),
-        g = calcColorComp(adjustTc(tg)),
-        b = calcColorComp(adjustTc(tb));
-      return RgbColor.fromFractions(r, g, b);
+    function toString() {
+      return [
+        'hsl(',
+        [
+          this.hue,
+          ColorUtil._componentToPercent(this.saturation),
+          ColorUtil._componentToPercent(this.lightness)
+        ].join(', '),
+        ')'
+      ].join('');
     }
 
     return {
-      toRgbColor: toRgbColor
+      toRgbColor: toRgbColor,
+      toString: toString
     }
+  })());
+
+  ///////////////////////////////////////
+  // HslaColor: @immutable
+  ///////////////////////////////////////
+
+  /**
+   * HslaColor constructor.
+   * @param {hue} hue component in degrees.
+   * @param {saturation} saturation component. fraction:0.0~1.0
+   * @param {lightness} lightness component. fraction:0.0~1.0
+   * @param {alpha} alpha component. fraction:0.0~1.0
+   */
+  function HslaColor(hue, saturation, lightness, alpha) {
+    this.hue = AngleUtil.normalizeDegree(hue);
+    this.saturation = MathUtil.clipByRange(saturation, 0, 1);
+    this.lightness = MathUtil.clipByRange(lightness, 0, 1);
+    this.alpha = MathUtil.clipByRange(alpha, 0, 1);
+  }
+  def(HslaColor.prototype, (function() {
+    function toRgbaColor() {
+      var rgb = new HslColor(this.hue, this.saturation, this.lightness).
+        toRgbColor();
+      return new RgbaColor(rgb.red, rgb.green, rgb.blue, this.alpha);
+    }
+
+    function toString() {
+      return [
+        'hsla(',
+        [
+          this.hue,
+          ColorUtil._componentToPercent(this.saturation),
+          ColorUtil._componentToPercent(this.lightness),
+          this.alpha
+        ].join(', '),
+        ')'
+      ].join('');
+    }
+
+    return {
+      toRgbaColor: toRgbaColor,
+      toString: toString
+    }
+  })());
+
+  function ColorUtil() {}
+  def(ColorUtil, (function() {
+    var hashThreeDigitRgbRegExp = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i,
+      hashSixDigitRgbRegExp = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i,
+      rgbParenRegExp = /^rgb\(\s*(-?(?:(?:\d+(?:\.\d*)?|\.\d+)%|\d+))\s*,\s*(-?(?:(?:\d+(?:\.\d*)?|\.\d+)%|\d+))\s*,\s*(-?(?:(?:\d+(?:\.\d*)?|\.\d+)%|\d+))\s*\)$/,
+      rgbaParenRegExp = /^rgba\(\s*(-?(?:(?:\d+(?:\.\d*)?|\.\d+)%|\d+))\s*,\s*(-?(?:(?:\d+(?:\.\d*)?|\.\d+)%|\d+))\s*,\s*(-?(?:(?:\d+(?:\.\d*)?|\.\d+)%|\d+))\s*\,\s*(-?(?:\d+(?:\.\d*)|\.\d+))\s*\)$/,
+      hslParenRegExp = /^hsl\(\s*(-?(?:\d+(?:\.\d*)?|\.\d+))\s*,\s*(-?(?:\d+(?:\.\d*)?|\.\d+)%)\s*,\s*(-?(?:\d+(?:\.\d*)?|\.\d+)%)\s*\)$/,
+      hslaParenRegExp = /^hsla\(\s*(-?(?:\d+(?:\.\d*)?|\.\d+))\s*,\s*(-?(?:\d+(?:\.\d*)?|\.\d+)%)\s*,\s*(-?(?:\d+(?:\.\d*)?|\.\d+)%)\s*\),\s*(-?(?:\d+(?:\.\d*)|\.\d+))\s*\)$/;
+
+    function parse(colorStr) {
+      var m;
+      switch (colorStr.charAt(0)) {
+        case '#':
+          m = colorStr.match(hashSixDigitRgbRegExp);
+          if (m) {
+            return new RgbColor(
+              parseInt(m[1], 16) / 255,
+              parseInt(m[2], 16) / 255,
+              parseInt(m[3], 16) / 255
+            );
+          }
+          m = colorStr.match(hashThreeDigitRgbRegExp);
+          if (m) {
+            return new RgbColor(
+              parseInt(m[1] + m[1], 16) / 255,
+              parseInt(m[2] + m[2], 16) / 255,
+              parseInt(m[3] + m[3], 16) / 255
+            );
+          }
+          break;
+        case 'r':
+          m = colorStr.match(rgbParenRegExp);
+          if (m) {
+            return new RgbColor(
+              parseFloat(m[1]) / 100,
+              parseFloat(m[2]) / 100,
+              parseFloat(m[3]) / 100
+            );
+          }
+          m = colorStr.match(rgbaParenRegExp);
+          if (m) {
+            return new RgbaColor(
+              parseFloat(m[1]) / 100,
+              parseFloat(m[2]) / 100,
+              parseFloat(m[3]) / 100,
+              parseFloat(m[4])
+            );
+          }
+          break;
+        case 'h':
+          m = colorStr.match(hslParenRegExp);
+          if (m) {
+            return new HslColor(
+              parseFloat(m[1]),
+              parseFloat(m[2]) / 100,
+              parseFloat(m[3]) / 100
+            );
+          }
+          m = colorStr.match(hslaParenRegExp);
+          if (m) {
+            return new HslaColor(
+              parseFloat(m[1]),
+              parseFloat(m[2]) / 100,
+              parseFloat(m[3]) / 100,
+              parseFloat(m[4])
+            );
+          }
+          break;
+      }
+      throw new Error("Invalid color string");
+    }
+
+    function _componentToPercent(component) {
+      return (100 * component).toFixed(1).replace(/\.0*$/, '') + '%';
+    }
+
+    return {
+      parse: parse,
+      _componentToPercent: _componentToPercent
+    };
   })());
 
   ///////////////////////////////////////
@@ -733,9 +885,12 @@ var drauti = (function() {
     inherit: inherit,
     StringUtil: StringUtil,
     MathUtil: MathUtil,
+    AngleUtil: AngleUtil,
+    ColorUtil: ColorUtil,
     RgbColor: RgbColor,
-    HsbColor: HsbColor,
+    RgbaColor: RgbaColor,
     HslColor: HslColor,
+    HslaColor: HslaColor,
     Font: Font,
     Point: Point,
     Transform: Transform,
